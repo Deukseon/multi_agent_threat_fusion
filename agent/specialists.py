@@ -54,19 +54,31 @@ def radar_agent(state: SpecialistInput) -> dict:
 
 def cv_agent(state: SpecialistInput) -> dict:
     """EO/IR 영상 담당관. sitrep_fusion_agent Phase 6의 YOLO26-OBB 탐지 결과를
-    받는다고 가정 — 여기선 클래스·신뢰도만 보고 단순 점수화한다."""
+    받는다고 가정 — 여기선 클래스·신뢰도만 보고 단순 점수화한다.
+
+    [2026-08-18 수정] 클래스 집합을 실제 YOLO26-OBB 모델이 내놓는 DOTA-v1.0 15개
+    클래스 taxonomy(`agent/observation.py`의 CV_HIGH_CONCERN_CLASSES 등)에 맞게
+    교체했다. 원래는 "military-vehicle"/"warship" 같은 임의로 지어낸 클래스명을
+    썼는데, 실제 모델은 이런 클래스를 절대 출력하지 않으므로(DOTA엔 "군용/민간"
+    구분이 없음) 실제 연동 시 cv_agent가 항상 점수 0만 내는 문제가 있었다."""
     detections = state["observation"].get("cv_detections", [])
     if not detections:
         report = SpecialistReport("cv", 0.0, 0.3, "영상 내 특이 탐지 없음")
         return {"specialist_reports": [report]}
 
-    military_classes = {"military-vehicle", "warship", "missile-launcher"}
+    from .observation import CV_HIGH_CONCERN_CLASSES, CV_LOW_CONCERN_CLASSES
+
     best_score = 0.0
     reasons: list[str] = []
     for det in detections:
         cls = det.get("class", "unknown-object")
         conf = det.get("confidence", 0.0)
-        base = 60 if cls in military_classes else 20
+        if cls in CV_HIGH_CONCERN_CLASSES:
+            base = 60
+        elif cls in CV_LOW_CONCERN_CLASSES:
+            base = 15
+        else:
+            base = 5  # 스포츠 시설 등 위협과 무관한 클래스 -- 로그엔 남기되 점수는 거의 안 줌
         score = base * conf
         reasons.append(f"{cls}(신뢰도 {conf:.2f})")
         best_score = max(best_score, score)

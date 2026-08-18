@@ -72,7 +72,9 @@ def main() -> int:
              "identity": "UNKNOWN", "in_protected_zone": True},
         ],
         "cv_detections": [
-            {"class": "military-vehicle", "confidence": 0.81},
+            # [2026-08-18] cv_agent가 실제 DOTA-v1.0 taxonomy를 쓰도록 바뀌면서
+            # "military-vehicle"(가상 클래스) -> "large-vehicle"(실제 클래스)로 교체.
+            {"class": "large-vehicle", "confidence": 0.81},
         ],
         "sigint_signals": [
             {"freq_mhz": 432.1, "strength_db": -40, "note": "미상 주파수 신호 버스트"},

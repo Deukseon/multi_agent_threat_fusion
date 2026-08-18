@@ -185,12 +185,60 @@ sigint 자체의 문제는 완전히 해결됐고(47.3%→0%), 문턱을 2개로
 사용자 PC에서 `ChronosForecaster`로 이 실험을 재현해서 실제 단일-오버라이드 오탐률을
 확인하는 게 다음 검증 과제입니다 (아래 "다음 할 일" 참고).
 
+## Phase 2.5 — radar/cv 실제 연동 (2026-08-18)
+
+### 무엇을 했나
+
+목(mock) 로직이었던 `radar_agent`/`cv_agent`를 sitrep_fusion_agent에서 이미 검증된
+실제 연동 코드로 교체했습니다. `sigint_agent`처럼 스코어링 로직만 손본 게 아니라,
+**실제 데이터 소스(OpenSky API, YOLO26-OBB 모델) 자체를 이 프로젝트에 옮겨왔다**는
+점이 다릅니다.
+
+- `config.py`, `fusion/geofence.py`, `fusion/identification.py`,
+  `data_sources/flight_tracker.py`, `data_sources/cv_detection.py` — sitrep_fusion_agent
+  에서 그대로 포팅 (검증된 코드 재사용, 새로 작성 안 함).
+- `agent/observation.py` — **신규 모듈**. Phase 1의 Forecaster 인터페이스 분리와 같은
+  설계 원칙을 적용: "원본 데이터 → 우리 포맷 변환" 로직(`radar_track_to_dict`,
+  `cv_detection_to_dict`, 순수 함수)과 "실제 API·모델을 호출하는" 로직
+  (`collect_radar_observation`, `collect_cv_observation`)을 분리했습니다. 앞엣것은
+  샌드박스에서 네트워크 없이 완전히 검증 가능하고, 뒤엣것은 사용자 PC에서만 검증
+  가능합니다.
+
+### 실행 중 발견한 문제: CV 클래스 taxonomy 불일치
+
+포팅하다가 실제로 실행해보진 않았지만 코드를 뜯어보는 과정에서, 기존 `cv_agent`의
+목 로직이 `"military-vehicle"`, `"warship"`, `"missile-launcher"`처럼 **임의로 지어낸
+클래스명**으로 점수를 매기고 있었다는 걸 발견했습니다. 그런데 실제 YOLO26-OBB 모델은
+DOTA-v1.0 데이터셋의 15개 클래스(plane, ship, storage-tank, large-vehicle 등)만
+출력하고, 여기엔 "군용/민간" 구분이 아예 없습니다 — 즉 실제 모델을 그대로 연결했으면
+`cv_agent`가 **항상 점수 0에 가깝게만 나오는** 조용한 실패가 발생할 뻔했습니다.
+
+`agent/observation.py`에 실제 taxonomy 기준 `CV_HIGH_CONCERN_CLASSES`
+(plane/helicopter/ship/large-vehicle — 위협 판단에 더 의미 있을 수 있는 플랫폼류)와
+`CV_LOW_CONCERN_CLASSES`(small-vehicle/harbor/storage-tank/bridge/roundabout — 민간
+인프라류)를 정의하고, `cv_agent`를 3단계 점수화(고위험 60점·저위험 15점·무관 5점,
+전부 신뢰도 곱)로 다시 작성했습니다. `fusion/identification.py`와 같은 한계가
+그대로 적용됩니다 — "plane"이 여객기인지 전투기인지는 이 모델이 모르므로, 위치(보호구역
+근접도)와 다른 센서와의 corroboration으로 보완해야 하는 약한 신호로 취급합니다.
+
+### 검증 결과
+
+| 검증 파일 | 범위 | 결과 |
+|---|---|---|
+| `test_multi_agent_skeleton.py` | cv_agent 교체 후 기존 5개 시나리오 전부 재실행 (테스트 데이터도 `"military-vehicle"`→`"large-vehicle"` 실제 클래스명으로 갱신) | 12/12 통과 |
+| `test_observation.py` (신규) | `radar_track_to_dict`/`cv_detection_to_dict` 순수 변환 함수 — 위경도 결측, 보호구역 내부/외부, 호출부호 유무, 고도·속도 결측 등 | 12/12 통과 |
+
+**샌드박스에서 검증 못 한 부분** (huggingface.co와 동일한 정책으로
+opensky-network.org도 차단됨, `curl` 테스트로 확인):
+
+- `collect_radar_observation()` — 실제 OpenSky API 응답을 받아오는 부분
+- `collect_cv_observation()` — 실제 YOLO26-OBB 모델로 이미지를 추론하는 부분 (모델
+  가중치 파일 21.5MB도 device_commit_files 20MB 제한 때문에 이 세션에서 직접 전송 못 함)
+
+이 두 가지는 사용자 PC(인터넷 O)에서만 확인 가능합니다. 아래 "다음 할 일" 참고.
+
 ### 알려진 한계 (다음 단계에서 다룰 것)
 
-- radar/cv 에이전트는 아직 목(mock) 로직 — 실제로는 sitrep_fusion_agent의
-  `flight_tracker.py`/`cv_detection.py`/`geofence.py` 같은 실제 연동 코드를 가져와 교체
-  예정 (`sigint_agent`는 스코어링 로직 자체는 위에서 수정 완료 — 실제 데이터 소스로
-  바꾸는 작업은 별개로 남아 있음).
 - coordinator의 SITREP은 아직 템플릿 기반 텍스트 — sitrep_fusion_agent의 `generate_brief`
   노드처럼 Claude API로 자연어 브리핑을 생성하는 건 다음 확장 지점 (지금은 "여러 에이전트
   판단을 합치는 로직 자체"만 먼저 검증하는 게 목적이라 의도적으로 보류).
@@ -207,7 +255,16 @@ sigint 자체의 문제는 완전히 해결됐고(47.3%→0%), 문턱을 2개로
    기준으로 재현해서, `ir_anomaly`의 실제 단일-오버라이드 오탐률(완전한 ANOMALY만의
    비율)을 측정 — Mock 기준으로는 8%대 오탐의 99.8%가 여기서 나온다는 게 이번에
    확인됐으므로, 이 수치가 실전에서 얼마나 개선되는지가 다음 핵심 검증 포인트
-5. radar/cv 목(mock) 로직을 sitrep_fusion_agent의 실제 연동 코드로 교체할지,
-   아니면 이 신규 프로젝트에서 다시 만들지 결정
-6. NASA FIRMS 등 실제 공개 열이상 데이터로 합성 데이터를 대체할지 검토
-7. coordinator에 LLM 기반 SITREP 생성 붙일지 결정
+5. ~~radar/cv 목(mock) 로직을 sitrep_fusion_agent의 실제 연동 코드로 교체~~
+   ✅ 완료 (2026-08-18, Phase 2.5 — 단 실제 API·모델 호출은 사용자 PC 검증 필요, 아래 참고)
+6. **[신규]** 사용자 PC에서 radar/cv 실제 연동 검증:
+   - `models\yolo26s_obb_dota_best.pt`를 sitrep_fusion_agent에서 직접 복사
+     (`Copy-Item "C:\dev\sitrep_fusion_agent\models\yolo26s_obb_dota_best.pt" "C:\dev\multi_agent_threat_fusion\models\yolo26s_obb_dota_best.pt"`)
+   - `.env.example`을 `.env`로 복사하고 `OPENSKY_CLIENT_ID`/`OPENSKY_CLIENT_SECRET` 채우기
+     (sitrep_fusion_agent의 `.env`에 있는 값 그대로 재사용 가능)
+   - `requirements.txt`에 추가된 `requests`/`ultralytics`/`python-dotenv` 설치
+   - `python -c "from agent.observation import collect_radar_observation; from config import MONITOR_BBOX, PROTECTED_ZONES; print(collect_radar_observation(MONITOR_BBOX, PROTECTED_ZONES))"` 로
+     실제 항적이 잡히는지 확인
+   - `collect_cv_observation()`도 sitrep_fusion_agent의 테스트 이미지로 동일하게 확인
+7. NASA FIRMS 등 실제 공개 열이상 데이터로 합성 데이터를 대체할지 검토
+8. coordinator에 LLM 기반 SITREP 생성 붙일지 결정

@@ -2,3 +2,6 @@ numpy
 chronos-forecasting
 torch
 langgraph
+requests
+ultralytics
+python-dotenv
