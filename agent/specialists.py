@@ -77,24 +77,61 @@ def cv_agent(state: SpecialistInput) -> dict:
 
 
 def sigint_agent(state: SpecialistInput) -> dict:
-    """SIGINT(신호정보) 담당관. 평소와 다른 강도/미상 주파수의 신호 버스트를
-    이상 신호로 간주 — 실제 신호분석 대신 규칙 기반으로 단순화."""
+    """SIGINT(신호정보) 담당관.
+
+    [2026-08-18 수정] 원래는 "신호가 세면 이상"이라는 규칙이었는데, 실측 결과
+    실제 위협이 전혀 없는 배경 소음(방송·통신 등 흔한 강신호)에서도 47.3% 확률로
+    50점 이상을 오판한다는 게 드러났다 (experiment_corroboration_threshold.py).
+    세기(strength_db)는 "신호가 있다는 것"만 알려줄 뿐 "위험하다는 것"은 알려주지
+    않는다 — 강한 신호 자체는 방송탑·통신기지국·민간 레이더 등 어디에나 있다.
+
+    그래서 판단 기준을 뒤집었다: 핵심 근거는 `note`(신호처리 단계에서 이미
+    "이상 신호"로 플래그된 경우 — 예: 미상 주파수, 암호화 버스트, 재밍 패턴)이고,
+    세기는 "이상으로 플래그된 신호가 얼마나 강한가"를 보정하는 보조 지표로만 쓴다.
+    note가 없으면 아무리 세도 최대 25점까지만 올라가서(다른 에이전트와 corroboration
+    문턱인 50점을 절대 단독으로 못 넘김), 오버라이드②가 "시끄러운 배경 신호"에
+    흔들리지 않게 만들었다.
+    """
     signals = state["observation"].get("sigint_signals", [])
     if not signals:
         report = SpecialistReport("sigint", 0.0, 0.3, "특이 신호 없음")
         return {"specialist_reports": [report]}
 
     best_score = 0.0
+    best_confidence = 0.3
     reasons: list[str] = []
+    unflagged_present = False
     for sig in signals:
         strength = sig.get("strength_db", -100)
-        # dB 값이 -50보다 크면(=더 강하면) 이상 신호로 간주 (단순화한 임계값)
-        score = min(100.0, max(0.0, (strength + 100) * 1.5))
-        if sig.get("note"):
-            reasons.append(f"{sig['freq_mhz']}MHz: {sig['note']}")
-        best_score = max(best_score, score)
+        has_note = bool(sig.get("note"))
+        # 세기 자체는 약한 보조 근거 -- 최대 25점 (단독으로는 corroboration 문턱인
+        # 50점을 절대 못 넘기게 상한을 낮게 잡음)
+        strength_component = min(25.0, max(0.0, (strength + 100) * 0.375))
 
-    report = SpecialistReport("sigint", best_score, 0.6, "; ".join(reasons) or "신호 세기 이상", {"signals": signals})
+        if has_note:
+            # 이상 신호로 실제 플래그된 경우에만 핵심 점수(60점)를 부여, 세기는 가산치
+            score = min(100.0, 60.0 + strength_component)
+            confidence = 0.75
+            reasons.append(f"{sig['freq_mhz']}MHz: {sig['note']} (세기 {strength:.0f}dB)")
+        else:
+            score = strength_component
+            confidence = 0.4
+            unflagged_present = True
+
+        if score > best_score:
+            best_score = score
+            best_confidence = confidence
+
+    if not reasons:
+        summary = (
+            "강한 신호는 있으나 이상 신호로 플래그되지 않음(배경 RF로 판단)"
+            if unflagged_present
+            else "특이 신호 없음"
+        )
+    else:
+        summary = "; ".join(reasons)
+
+    report = SpecialistReport("sigint", best_score, best_confidence, summary, {"signals": signals})
     return {"specialist_reports": [report]}
 
 

@@ -6,7 +6,7 @@ Chronos-2 같은 실제 외부 모델/네트워크 접속이 필요 없는 순�
 실제 성능 검증까지 끝낸 상태 — 여기서는 "그 결과가 멀티에이전트 그래프 안에서도 똑같이
 동작하는가"만 확인한다.)
 
-시나리오 3개 + 예외 케이스 2개, 총 5개 사이클을 검증한다:
+시나리오 4개 + 예외 케이스 2개, 총 6개 사이클을 검증한다:
   1. 평시 사이클 — 전 센서 정상, 낮은 종합 점수
   2. 로켓엔진 점화 사이클 — 열이상 ANOMALY + 미확인 트랙이 보호구역 내부에 동시 존재
      -> CRITICAL 오버라이드가 걸려야 함
@@ -15,6 +15,9 @@ Chronos-2 같은 실제 외부 모델/네트워크 접속이 필요 없는 순�
      호출되지 않고, coordinator가 "보고 없음"으로 안전하게 처리하는지 확인
   5. 센서 일부만 살아있는 사이클 — radar_tracks만 있고 나머지는 없을 때
      dispatch_specialists가 radar_agent 하나만 부르는지 확인 (동적 fan-out 검증)
+  6. [2026-08-18 추가] 세지만 이상 신호로 플래그 안 된 SIGINT — sigint_agent
+     스코어링 버그 수정에 대한 회귀 테스트. 강한 신호라도 note가 없으면
+     50점(corroboration 문턱)을 넘지 않아야 한다.
 """
 from __future__ import annotations
 
@@ -112,6 +115,19 @@ def main() -> int:
     r5 = run_cycle(5, obs5)
     checks.append(("레이더만 존재 -> radar_agent 1건만 호출", len(r5["specialist_reports"]) == 1))
     checks.append(("레이더만 존재 -> 호출된 건 radar", r5["specialist_reports"][0].agent_name == "radar"))
+
+    # --- 시나리오 6: 세지만 이상 신호로 플래그 안 된 SIGINT (2026-08-18 회귀 테스트) ---
+    # sigint_agent 스코어링 버그 수정 검증용. note 없이 세기만 강한 신호(방송탑·통신
+    # 기지국 등 흔한 배경 RF를 흉내)는 corroboration 문턱(50점)을 넘으면 안 된다.
+    obs6 = {
+        "sigint_signals": [
+            {"freq_mhz": 850.0, "strength_db": -20},  # note 없음 -- 아주 강하지만 정상 신호
+        ],
+    }
+    r6 = run_cycle(6, obs6)
+    sigint_report = r6["specialist_reports"][0]
+    checks.append(("배경 RF(세지만 미플래그) -> sigint 점수 50점 미만", sigint_report.threat_score < 50))
+    checks.append(("배경 RF -> 종합 등급 CRITICAL 아님", r6["final_assessment"]["level"] != "CRITICAL"))
 
     # --- 결과 요약 ------------------------------------------------------
     print("=" * 60)
