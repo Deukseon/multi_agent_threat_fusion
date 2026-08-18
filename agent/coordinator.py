@@ -2,11 +2,13 @@
 상황실장(coordinator) 노드 — 4개 전문 에이전트의 보고를 종합해서
 최종 위협 평가 + SITREP 초안을 만든다.
 
-지금은 규칙 기반(가중평균 + CRITICAL 강제 오버라이드)으로 종합한다.
-sitrep_fusion_agent의 generate_brief 노드처럼 Claude API로 자연어 브리핑을
-생성하는 것은 다음 단계 확장 지점으로 남겨둔다 (README 참고) — 지금은
-"여러 에이전트의 판단을 하나로 합치는 로직 자체"를 먼저 검증하는 게 목적이라
-LLM 호출까지 붙이면 무엇을 검증하는지 흐려지기 때문.
+지금은 규칙 기반(가중평균 + CRITICAL 강제 오버라이드)으로 종합한다. 여기서 만드는
+state["sitrep"]은 일부러 템플릿 텍스트로만 남겨둔다 — "여러 에이전트의 판단을 하나로
+합치는 로직 자체"를 검증하는 게 이 노드의 목적이라, LLM 호출까지 여기 붙이면 무엇을
+검증하는지 흐려지기 때문. Claude API 기반 자연어 브리핑은 이 노드 다음에 실행되는
+별도 노드(`agent/brief.py`의 `generate_sitrep`)로 분리했다 — sitrep_fusion_agent의
+generate_brief와 같은 패턴, "종합 판단"과 "그 판단을 사람이 읽기 좋게 다듬는 것"을
+서로 다른 책임으로 나눈 것.
 """
 from __future__ import annotations
 

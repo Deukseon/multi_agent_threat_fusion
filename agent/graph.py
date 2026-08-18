@@ -17,6 +17,7 @@ from __future__ import annotations
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
+from .brief import generate_sitrep
 from .coordinator import coordinator
 from .specialists import cv_agent, ir_anomaly_node, radar_agent, sigint_agent
 from .state import GraphState
@@ -66,6 +67,7 @@ def build_graph():
     graph.add_node("sigint_agent", sigint_agent)
     graph.add_node("ir_anomaly_agent", ir_anomaly_node)
     graph.add_node("coordinator", coordinator)
+    graph.add_node("generate_sitrep", generate_sitrep)
 
     # START -> (fan-out) -> 관련 전문 에이전트들 (전 센서 침묵 시엔 coordinator로 직행)
     graph.add_conditional_edges(START, dispatch_specialists, list(_SPECIALIST_NODES) + ["coordinator"])
@@ -74,7 +76,9 @@ def build_graph():
     for node_name in _SPECIALIST_NODES:
         graph.add_edge(node_name, "coordinator")
 
-    graph.add_edge("coordinator", END)
+    # coordinator(규칙 기반 종합) -> generate_sitrep(Claude API로 자연어 브리핑 생성) -> END
+    graph.add_edge("coordinator", "generate_sitrep")
+    graph.add_edge("generate_sitrep", END)
 
     return graph.compile()
 

@@ -35,6 +35,7 @@ def run_cycle(cycle_id: int, observation: dict) -> dict:
             "specialist_reports": [],
             "final_assessment": None,
             "sitrep": None,
+            "natural_language_brief": None,
         }
     )
     print(result["sitrep"])
@@ -63,6 +64,10 @@ def main() -> int:
     r1 = run_cycle(step, obs1)
     checks.append(("평시 사이클 -> LOW/MEDIUM(80 미만)", r1["final_assessment"]["score"] < 80))
     checks.append(("평시 사이클 -> 전문 에이전트 4명 전원 호출됨", len(r1["specialist_reports"]) == 4))
+    # [2026-08-18 추가] generate_sitrep 노드 검증. 샌드박스엔 ANTHROPIC_API_KEY가 없어서
+    # 실제 LLM 호출 자체는 실패하고 폴백 경로를 타는 게 정상이다 — 여기선 "폴백이든
+    # 실제 LLM 응답이든 브리핑이 비어있지 않게 안전히 채워지는가"만 확인한다.
+    checks.append(("평시 사이클 -> natural_language_brief가 비어있지 않음", bool(r1.get("natural_language_brief"))))
 
     # --- 시나리오 2: 로켓엔진 점화 사이클 (step=152, 열이상 ANOMALY 구간) ---
     step = 152
@@ -106,6 +111,9 @@ def main() -> int:
     r4 = run_cycle(999, {})
     checks.append(("빈 관측 -> 전문 에이전트 0명 호출, 안전하게 처리", len(r4["specialist_reports"]) == 0))
     checks.append(("빈 관측 -> level UNKNOWN", r4["final_assessment"]["level"] == "UNKNOWN"))
+    # 보고가 없으면 LLM을 부를 필요조차 없다 — generate_sitrep이 호출을 건너뛰고
+    # 원시 요약 문구를 그대로 쓰는지 확인 (불필요한 API 호출 방지 로직 검증)
+    checks.append(("빈 관측 -> natural_language_brief가 LLM 호출 없이 원시 요약", "특이사항 없음" in r4["natural_language_brief"]))
 
     # --- 시나리오 5: 레이더만 살아있는 사이클(동적 fan-out 검증) ------------
     obs5 = {

@@ -6,11 +6,24 @@
 (무작위 민간 트랙, 흔한 RF 신호, 순수 노이즈 열이상 시계열 등), 4개 전문
 에이전트를 그대로 돌리고, coordinator의 오버라이드② 문턱을 3 vs 2로 바꿔가며
 "실제로는 위협이 없는데 CRITICAL로 오판하는 비율"을 직접 센다.
+
+[2026-08-18 추가] 지금까지는 `agent/specialists.py`가 기본으로 쓰는 `MockForecaster`
+기준으로만 이 실험을 돌렸다. Mock은 24시간 주기 패턴을 못 따라가서 정상 패턴에도 잦은
+WATCH/ANOMALY를 내는 걸로 이미 알려져 있어서(Phase 1 README), 여기서 나온 "오탐의
+99.8%가 단일 오버라이드에서 나온다"는 수치가 실제 `ChronosForecaster`로도 재현되는지가
+남은 검증 과제다. 환경변수 `USE_REAL_FORECASTER=1`을 켜면 `agent.specialists` 모듈의
+`_ir_forecaster`를 실제 `ChronosForecaster`로 바꿔치기(monkeypatch)해서 재현할 수 있다
+— `agent/specialists.py` 자체는 건드리지 않는다(운영 그래프는 계속 Mock을 씀).
+[샌드박스 한계] huggingface.co가 막혀 있어 이 실제 모델 다운로드는 사용자 PC에서만
+가능 — 최초 실행 시 478MB 다운로드가 걸린다.
 """
 from __future__ import annotations
 
+import os
+
 import numpy as np
 
+import agent.specialists as specialists_module
 from agent.specialists import cv_agent, ir_anomaly_node, radar_agent, sigint_agent
 
 
@@ -86,8 +99,21 @@ def overridden(reports: list, min_corroborators: int) -> bool:
 
 
 def main() -> None:
+    if os.environ.get("USE_REAL_FORECASTER") == "1":
+        from ir_anomaly_agent import ChronosForecaster
+
+        print("[실제 ChronosForecaster 사용 — 최초 실행 시 amazon/chronos-2(478MB) 다운로드]")
+        specialists_module._ir_forecaster = ChronosForecaster()
+    else:
+        print("[MockForecaster 사용 중 — 실제 ChronosForecaster로 재현하려면 "
+              "환경변수 USE_REAL_FORECASTER=1로 실행 (huggingface.co 접속 필요)]")
+    print()
+
     rng = np.random.default_rng(0)
-    n_trials = 5000
+    # 실제 ChronosForecaster는 CPU 추론이 느려서(호출당 최대 1~2초) 5000회를 그대로
+    # 돌리면 시간이 많이 걸린다. 환경변수 N_TRIALS로 시행 횟수를 줄일 수 있다
+    # (예: N_TRIALS=300). Mock 기준일 땐 5000회도 수초 안에 끝나므로 기본값을 유지.
+    n_trials = int(os.environ.get("N_TRIALS", 5000))
 
     false_critical = {2: 0, 3: 0}
     corroborator_counts: list[int] = []

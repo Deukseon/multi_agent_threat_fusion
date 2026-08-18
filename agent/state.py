@@ -47,7 +47,8 @@ class GraphState(TypedDict):
     observation: dict[str, Any]                              # 이번 사이클의 원본 관측 묶음
     specialist_reports: Annotated[list[SpecialistReport], operator.add]
     final_assessment: Optional[dict]
-    sitrep: Optional[str]
+    sitrep: Optional[str]                                     # coordinator가 만드는 규칙 기반 요약(감사·폴백용)
+    natural_language_brief: Optional[str]                     # generate_sitrep이 Claude API로 만드는 자연어 브리핑
 
 
 class SpecialistInput(TypedDict):

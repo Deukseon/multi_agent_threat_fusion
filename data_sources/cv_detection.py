@@ -63,10 +63,17 @@ def _pixel_to_latlon(px: float, py: float, img_w: int, img_h: int, bounds: GeoBo
 
 
 def detect_objects(image_path: str, bounds: GeoBounds, conf_threshold: float = 0.4,
-                    weights: str = _FINETUNED_WEIGHTS) -> list[CVDetection]:
-    """이미지 한 장에서 객체를 탐지하고, 각 탐지 결과를 위경도로 지리참조해서 반환."""
+                    weights: str = _FINETUNED_WEIGHTS, imgsz: int = 1024) -> list[CVDetection]:
+    """이미지 한 장에서 객체를 탐지하고, 각 탐지 결과를 위경도로 지리참조해서 반환.
+
+    [2026-08-18 수정] `imgsz`를 명시적으로 안 넘기면 ultralytics는 기본값 640으로
+    추론한다. 그런데 이 모델은 `imgsz=1024`로 파인튜닝됐다(`args.yaml` 확인) — 학습과
+    추론 해상도가 다르면 특히 작은 객체(항구·선박처럼 가늘고 긴 객체)의 재현율이
+    크게 떨어질 수 있다. 실제로 사용자 PC에서 실 이미지로 검증하다가 이 불일치 때문에
+    탐지가 전혀 안 나오는 걸 발견해서(빈 리스트 반환), 학습 해상도와 맞춰 기본값을
+    1024로 명시했다."""
     model = _get_model(weights)
-    results = model(image_path, conf=conf_threshold, verbose=False)
+    results = model(image_path, conf=conf_threshold, imgsz=imgsz, verbose=False)
 
     detections = []
     for r in results:

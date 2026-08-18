@@ -5,3 +5,5 @@ langgraph
 requests
 ultralytics
 python-dotenv
+langchain-anthropic
+langchain-core
