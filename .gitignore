@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# 가상환경
+venv/
+.venv/
+env/
+
+# 환경변수/비밀값
+.env
+
+# OS/에디터 잡파일
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Chronos-2 등 대용량 모델 캐시(로컬에만 두고 GitHub엔 안 올림)
+*.bin
+*.safetensors
+*.pt
+*.pth
