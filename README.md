@@ -235,7 +235,14 @@ opensky-network.org도 차단됨, `curl` 테스트로 확인):
 - `collect_cv_observation()` — 실제 YOLO26-OBB 모델로 이미지를 추론하는 부분 (모델
   가중치 파일 21.5MB도 device_commit_files 20MB 제한 때문에 이 세션에서 직접 전송 못 함)
 
-이 두 가지는 사용자 PC(인터넷 O)에서만 확인 가능합니다. 아래 "다음 할 일" 참고.
+이 두 가지는 사용자 PC(인터넷 O)에서만 확인 가능합니다.
+
+**[2026-08-18 추가] 사용자 PC 검증 완료**: 모델 파일 복사, `.env` 설정, `pip install -r
+requirements.txt` 이후 `collect_radar_observation()`을 실제로 호출해서 OpenSky API
+연동까지 확인 완료. `models/yolo26s_obb_dota_best.pt`를 포함한 전체 변경사항을
+`git add -f models/yolo26s_obb_dota_best.pt`(`.gitignore`의 `*.pt` 규칙 — 원래
+Chronos-2 같은 대용량 캐시 방지용 — 때문에 이 파인튜닝 모델만 예외적으로 강제 추가)로
+커밋·push 완료. radar/cv 실제 연동 작업(Phase 2.5) 전체 마무리.
 
 ### 알려진 한계 (다음 단계에서 다룰 것)
 
@@ -256,15 +263,11 @@ opensky-network.org도 차단됨, `curl` 테스트로 확인):
    비율)을 측정 — Mock 기준으로는 8%대 오탐의 99.8%가 여기서 나온다는 게 이번에
    확인됐으므로, 이 수치가 실전에서 얼마나 개선되는지가 다음 핵심 검증 포인트
 5. ~~radar/cv 목(mock) 로직을 sitrep_fusion_agent의 실제 연동 코드로 교체~~
-   ✅ 완료 (2026-08-18, Phase 2.5 — 단 실제 API·모델 호출은 사용자 PC 검증 필요, 아래 참고)
-6. **[신규]** 사용자 PC에서 radar/cv 실제 연동 검증:
-   - `models\yolo26s_obb_dota_best.pt`를 sitrep_fusion_agent에서 직접 복사
-     (`Copy-Item "C:\dev\sitrep_fusion_agent\models\yolo26s_obb_dota_best.pt" "C:\dev\multi_agent_threat_fusion\models\yolo26s_obb_dota_best.pt"`)
-   - `.env.example`을 `.env`로 복사하고 `OPENSKY_CLIENT_ID`/`OPENSKY_CLIENT_SECRET` 채우기
-     (sitrep_fusion_agent의 `.env`에 있는 값 그대로 재사용 가능)
-   - `requirements.txt`에 추가된 `requests`/`ultralytics`/`python-dotenv` 설치
-   - `python -c "from agent.observation import collect_radar_observation; from config import MONITOR_BBOX, PROTECTED_ZONES; print(collect_radar_observation(MONITOR_BBOX, PROTECTED_ZONES))"` 로
-     실제 항적이 잡히는지 확인
-   - `collect_cv_observation()`도 sitrep_fusion_agent의 테스트 이미지로 동일하게 확인
+   ✅ 완료 (2026-08-18, Phase 2.5)
+6. ~~사용자 PC에서 radar 실제 연동 검증(`collect_radar_observation()`으로 OpenSky
+   API 실제 호출)~~ ✅ 완료 (2026-08-18, 모델 파일 복사·`.env` 설정·의존성 설치 후
+   실제 항적 수신 확인, `models/yolo26s_obb_dota_best.pt` 포함 GitHub push까지 완료)
+   — `collect_cv_observation()`(실제 이미지로 YOLO 추론)은 아직 별도 확인 전, 다음
+   세션에서 sitrep_fusion_agent의 테스트 이미지로 확인 필요
 7. NASA FIRMS 등 실제 공개 열이상 데이터로 합성 데이터를 대체할지 검토
 8. coordinator에 LLM 기반 SITREP 생성 붙일지 결정
