@@ -7,3 +7,9 @@ ultralytics
 python-dotenv
 langchain-anthropic
 langchain-core
+# --- 2026-08-19 추가: ⑫ 희소 군사 자산 세분류(선박 v1) 통합 ---
+torchvision      # FinetunedShipSubclassifier가 MobileNetV3-Small을 불러오는 데 필요
+opencv-python    # crop_utils.py가 cv2로 회전 바운딩박스를 크롭 -- 지금까진 ultralytics의
+                 # 내부 의존성(opencv-python-headless)에 얹혀 있었는데, 이제 파이프라인이
+                 # 직접 cv2를 import하므로 명시적으로 선언
+pillow           # ship_subclassifier.py가 PIL.Image로 크롭 이미지를 텐서 변환 전 전처리

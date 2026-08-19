@@ -60,27 +60,46 @@ def cv_agent(state: SpecialistInput) -> dict:
     클래스 taxonomy(`agent/observation.py`의 CV_HIGH_CONCERN_CLASSES 등)에 맞게
     교체했다. 원래는 "military-vehicle"/"warship" 같은 임의로 지어낸 클래스명을
     썼는데, 실제 모델은 이런 클래스를 절대 출력하지 않으므로(DOTA엔 "군용/민간"
-    구분이 없음) 실제 연동 시 cv_agent가 항상 점수 0만 내는 문제가 있었다."""
+    구분이 없음) 실제 연동 시 cv_agent가 항상 점수 0만 내는 문제가 있었다.
+
+    [2026-08-19 수정] ⑫ 희소 군사 자산 세분류(선박 v1) 통합. `cls == "ship"`이고
+    `sub_class`가 있는 경우, YOLO의 "ship"이라는 뭉뚱그린 판단보다 더 세밀한
+    근거를 쓴다: 함정처럼 보이는 유형(항공모함/전투함/잠수함)이면 기존
+    CV_HIGH_CONCERN_CLASSES(base=60)보다 높은 base=85, 상선처럼 보이는 유형이면
+    CV_LOW_CONCERN_CLASSES(base=15)와 같은 수준으로 낮춘다. [fusion/identification.py와
+    같은 원칙] 이건 "이 배가 군함이다/민간선이다"라는 식별 주장이 아니라 "외형이
+    군함형/민간선형에 가깝게 관측됐다"는 관측 근거일 뿐이다 — 세분류기 자체도
+    HRSC2016 실측 기준 94% 정확도로, 100%가 아니다. sub_class가 없거나(세분류
+    비활성/실패) unknown_ship_type이면 기존처럼 CV_HIGH_CONCERN_CLASSES 규칙으로
+    폴백한다."""
     detections = state["observation"].get("cv_detections", [])
     if not detections:
         report = SpecialistReport("cv", 0.0, 0.3, "영상 내 특이 탐지 없음")
         return {"specialist_reports": [report]}
 
     from .observation import CV_HIGH_CONCERN_CLASSES, CV_LOW_CONCERN_CLASSES
+    from ship_subclassifier import CIVILIAN_LOOKING_CATEGORIES, MILITARY_LOOKING_CATEGORIES
 
     best_score = 0.0
     reasons: list[str] = []
     for det in detections:
         cls = det.get("class", "unknown-object")
         conf = det.get("confidence", 0.0)
-        if cls in CV_HIGH_CONCERN_CLASSES:
+        sub_class = det.get("sub_class")
+
+        if cls == "ship" and sub_class in MILITARY_LOOKING_CATEGORIES:
+            base = 85
+        elif cls == "ship" and sub_class in CIVILIAN_LOOKING_CATEGORIES:
+            base = 15
+        elif cls in CV_HIGH_CONCERN_CLASSES:
             base = 60
         elif cls in CV_LOW_CONCERN_CLASSES:
             base = 15
         else:
             base = 5  # 스포츠 시설 등 위협과 무관한 클래스 -- 로그엔 남기되 점수는 거의 안 줌
         score = base * conf
-        reasons.append(f"{cls}(신뢰도 {conf:.2f})")
+        label = f"{cls}[{sub_class}]" if sub_class else cls
+        reasons.append(f"{label}(신뢰도 {conf:.2f})")
         best_score = max(best_score, score)
 
     confidence = max((d.get("confidence", 0.0) for d in detections), default=0.3)

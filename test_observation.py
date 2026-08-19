@@ -26,6 +26,22 @@ class FakeCVDetection:
     lat: float
     lon: float
     source: str = "TEST"
+    sub_class: Optional[str] = None
+    sub_class_confidence: Optional[float] = None
+
+
+@dataclass
+class FakeCVDetectionLegacy:
+    """[2026-08-19] sub_class/sub_class_confidence 필드가 아예 없는 구버전 더미 객체.
+
+    cv_detection_to_dict가 getattr(det, "sub_class", None)으로 접근하므로, 이 필드가
+    아직 없는 구버전 CVDetection 객체를 넘겨도 크래시 없이 None으로 안전하게 채워지는지
+    (하위 호환) 확인하는 용도."""
+    object_class: str
+    confidence: float
+    lat: float
+    lon: float
+    source: str = "TEST"
 
 
 def main() -> int:
@@ -77,6 +93,22 @@ def main() -> int:
     checks.append(("cv_detection_to_dict -> class 필드 매핑", d_cv["class"] == "large-vehicle"))
     checks.append(("cv_detection_to_dict -> confidence 필드 매핑", d_cv["confidence"] == 0.77))
     checks.append(("cv_detection_to_dict -> lat/lon 매핑", d_cv["lat"] == 35.11 and d_cv["lon"] == 129.06))
+    checks.append(("cv_detection_to_dict -> sub_class 기본값 None", d_cv["sub_class"] is None))
+    checks.append(("cv_detection_to_dict -> sub_class_confidence 기본값 None", d_cv["sub_class_confidence"] is None))
+
+    # 5) [2026-08-19] ⑫ 선박 세분류 필드 전파 (sub_class가 채워진 ship 탐지)
+    det_ship = FakeCVDetection(
+        object_class="ship", confidence=0.88, lat=35.20, lon=129.10,
+        sub_class="warcraft", sub_class_confidence=0.94,
+    )
+    d_ship = cv_detection_to_dict(det_ship)
+    checks.append(("cv_detection_to_dict -> sub_class 값 전파", d_ship["sub_class"] == "warcraft"))
+    checks.append(("cv_detection_to_dict -> sub_class_confidence 값 전파", d_ship["sub_class_confidence"] == 0.94))
+
+    # 6) [2026-08-19] 하위 호환 -- sub_class 필드 자체가 없는 구버전 객체도 안전 처리
+    det_legacy = FakeCVDetectionLegacy(object_class="ship", confidence=0.5, lat=35.0, lon=129.0)
+    d_legacy = cv_detection_to_dict(det_legacy)
+    checks.append(("cv_detection_to_dict -> 구버전 객체(sub_class 없음)도 크래시 없이 None", d_legacy["sub_class"] is None))
 
     # --- 결과 요약 --------------------------------------------------------
     print("=" * 60)

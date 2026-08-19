@@ -80,23 +80,40 @@ CV_LOW_CONCERN_CLASSES = {"small-vehicle", "harbor", "storage-tank", "bridge", "
 
 
 def cv_detection_to_dict(det) -> dict:
-    """cv_detection.CVDetection 객체를 cv_agent가 기대하는 형태로 변환."""
+    """cv_detection.CVDetection 객체를 cv_agent가 기대하는 형태로 변환.
+
+    [2026-08-19 추가] sub_class/sub_class_confidence — ⑫ 희소 군사 자산 세분류(선박
+    v1)에서 온 필드. object_class != "ship"이거나 세분류가 비활성/실패한 경우 둘 다
+    None이며, radar_track_to_dict의 altitude_ft 등과 같은 방식으로 값이 없어도 키
+    자체는 항상 포함시켜서 dict 형태를 안정적으로 유지한다(cv_agent가 .get()으로
+    안전하게 접근 가능). getattr로 접근하는 이유는 test_observation.py의
+    FakeCVDetection처럼 이 필드가 없는 구버전 더미 객체로도 계속 테스트할 수 있게
+    하기 위함(하위 호환)."""
     return {
         "class": det.object_class,
         "confidence": det.confidence,
         "lat": det.lat,
         "lon": det.lon,
+        "sub_class": getattr(det, "sub_class", None),
+        "sub_class_confidence": getattr(det, "sub_class_confidence", None),
     }
 
 
-def collect_cv_observation(image_path: str, bounds, conf_threshold: float = 0.4) -> list[dict]:
+def collect_cv_observation(
+    image_path: str, bounds, conf_threshold: float = 0.4, classify_ship_subtype: bool = True
+) -> list[dict]:
     """실제 YOLO26-OBB 모델로 이미지를 탐지해서 cv_agent용 observation 리스트를 만든다.
 
     [샌드박스 검증 불가] 모델 가중치(21.5MB)가 이 세션엔 없고(20MB 전송 제한),
     실제 항공/위성 이미지도 없다. 사용자 PC에서 모델 파일을 옮기고 실제 이미지로
     실행해야 검증 가능하다 (README "다음 할 일" 참고).
+
+    classify_ship_subtype: detect_objects()로 그대로 전달(⑫ v1). False로 두면
+    선박 세분류를 건너뛰고 YOLO 탐지 결과만 반환 — sub_class 관련 필드는 전부 None.
     """
     from data_sources.cv_detection import detect_objects
 
-    detections = detect_objects(image_path, bounds, conf_threshold=conf_threshold)
+    detections = detect_objects(
+        image_path, bounds, conf_threshold=conf_threshold, classify_ship_subtype=classify_ship_subtype
+    )
     return [cv_detection_to_dict(d) for d in detections]
